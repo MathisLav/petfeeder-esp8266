@@ -1,0 +1,27 @@
+<html>
+	<head>
+		<title>Connection - Petfeeder</title>
+        <link href="/bootstrap.css" rel="stylesheet">    
+    </head>
+	<body class=container>
+        <h1>Status</h1>
+        <h2>%STATE%</h2>
+        <br />
+		<h1>Connect your Device</h1>
+		<form name="connection" action="connect" method="post" enctype="multipart/form-data">
+            <div class="container">
+                <div class="form_group">
+                    <label name="ssid">SSID:</label>
+                    <input type="text" name="ssid" required />
+                </div>
+                <div class = "form_group">
+                    <label name="password">Password:</label>
+                    <input type="password" name="password" value="" />
+                </div>
+                <div class="form_group">
+                    <input type="submit" name="submit" value="Connect" />
+                </div>
+            </div>
+        </form>
+	</body>
+</html>
