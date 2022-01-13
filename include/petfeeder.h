@@ -44,7 +44,7 @@ ESP8266WiFiMulti wifiMulti;
 /**
  * Time update stuffs
  */
-#define REFRESH_TIME	60 // 60 seconds. Warning: This value is an ESTIMATION : the actual refresh time will be greater!
+#define REFRESH_TIME	60*5 // 5 minutes. Warning: This value is an ESTIMATION : the actual refresh time will be greater!
 #define REFRESH_RATE	(int)(REFRESH_TIME/(GLOBAL_DELAY/1000))
 #define MAX_RETRIES		15   // 15*200ms = 3s
 const char* ntpServerName = "fr.pool.ntp.org";
@@ -52,6 +52,8 @@ const unsigned int localPort = 2390;          // local port to listen for UDP pa
 const int NTP_PACKET_SIZE = 48;         // NTP time stamp is in the first 48 bytes of the message
 const long fuseau = 1*3600;
 unsigned long initTimestamp = 0;
+bool timeInited = false;    // does the ntp server has been reached at least once since boot
+bool feedNowRequest = false;
 
 
 /**
@@ -83,10 +85,10 @@ const int Pin2 = D2; // IN2
 const int Pin3 = D3; // IN3
 const int Pin4 = D4; // IN4
 
-const int pole1[] ={0,0,0,0,0,1,1,1}; // magnet 1
-const int pole2[] ={0,0,0,1,1,1,0,0}; // magnet 2
-const int pole3[] ={0,1,1,1,0,0,0,0}; // magnet 3
-const int pole4[] ={1,1,0,0,0,0,0,1}; // magnet 4
+const int pole1[] = {0, 0, 0, 0, 0, 1, 1, 1}; // magnet 1
+const int pole2[] = {0, 0, 0, 1, 1, 1, 0, 0}; // magnet 2
+const int pole3[] = {0, 1, 1, 1, 0, 0, 0, 0}; // magnet 3
+const int pole4[] = {1, 1, 0, 0, 0, 0, 0, 1}; // magnet 4
 
 
 /**
@@ -106,7 +108,7 @@ unsigned long getMinutes();
 unsigned long getSeconds();
 unsigned int getMinTimestamp();
 unsigned long getBootTime();
-void soft_panic();
+void soft_reset(bool error);
 
 
 #endif // __PET_FEEDER__

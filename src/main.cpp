@@ -17,17 +17,12 @@
 #include <filelist.h>
 #include <LittleFS.h>
 
-// TODO :
-//  - Permettre de tous les effacer.
-//  - Faire une liste déourlante des réseaux dispo.
-//  - Rendre HTTPS (pour éviter les mitma).
-
 
 void setup() {
     Serial.begin(115200);
     if(!LittleFS.begin()) {
         eprintln("Failed to mount the filesystem.");
-        soft_panic();
+        soft_reset(true);
     }
 
     while(!WiFi.softAP("Petfeeder")) { delay(1000); }
@@ -41,8 +36,9 @@ void setup() {
     server.on("/delcreds", HTTP_GET, [](AsyncWebServerRequest *request) {
         File wifiCreds = LittleFS.open("wifi.txt", "w");
         wifiCreds.close();
-        request->send(200, "text/html", "All WiFi credentials were deleted.");
-        soft_panic();
+        request->send(200, "text/html", "All WiFi credentials were deleted.<br /><a href='/'>Get back to home page.</a>");
+        WiFi.disconnect();
+        dprintln("WiFi credentials deleted. The device is still connected to the internet, until you reboot it.");
     });
     server.on("/connect", HTTP_POST, [](AsyncWebServerRequest *request) {
         if(!request->hasArg("ssid") || !request->hasArg("password")) {
@@ -52,10 +48,8 @@ void setup() {
 
         String ssid = request->arg("ssid");
         String pass = request->arg("password");
-        dprint("SSID: ");
+        dprint("New SSID: ");
         dprintln(ssid);
-        dprint("Password: ");
-        dprintln(pass);
 
         wifi_credentials_t creds = {ssid, pass};
         storeCredentials(creds);
@@ -115,15 +109,18 @@ void storeCredentials(wifi_credentials_t creds) {
 void registerStoredCredentials() {
     wifi_credentials_t creds;
     File wifiConf = LittleFS.open("wifi.txt", "r");
+    dprintln("Stored credentials:");
     while(next(wifiConf, creds)) {
         wifiMulti.addAP(creds.ssid.c_str(), creds.pass.c_str());
+        dprint("   ");
+        dprintln(creds.ssid);
     }
     wifiConf.close();
 }
 
+
 void getUpdates() {
     if(WiFi.status() == WL_CONNECTED) {
-        dprintln(ESP.getFreeHeap());
         WiFiClientSecure client;
         client.setInsecure();
 
@@ -139,17 +136,15 @@ void getUpdates() {
 
         while(client.connected()) {
             String line = client.readStringUntil('\n');
-            dprintln(line);
             if (line == "\r")
                 break;
         }
 
-        const char *payload = client.readStringUntil('\n').c_str();
+        String payload = client.readStringUntil('\n');
         DynamicJsonDocument json(2048);
         deserializeJson(json, payload);
 
         const unsigned int version = json["data"]["__v"].as<unsigned int>();
-        dprintln(payload);
         if(config.version < version) {
             config.version = version;
 
@@ -175,15 +170,20 @@ void getUpdates() {
             config.fed = (bool*)calloc(size, 1);
 
             // Ignoring old feed requests of the day
-            for(unsigned int i = 0; i<config.size; i++) {
-                config.fed[i] = getMinTimestamp() >= config.feed_on[i];
+            if(timeInited) {
+                for(unsigned int i = 0; i<config.size; i++) {
+                    config.fed[i] = getMinTimestamp() >= config.feed_on[i];
+                }
             }
+
+            feedNowRequest = json["data"]["feed_now"].as<bool>();
 
             dprint("Udpate: [");
             for(unsigned int i = 0; i<config.size; i++) {
                 dprint(config.feed_on[i]);
                 dprint(", ");
             }
+            dprint(feedNowRequest ? "Feed Now" : "No Feed Now Request");
             dprintln("]");
         }
     }
@@ -206,18 +206,28 @@ void handleFeedEvents() {
             config.fed[i] = true;
         }
     }
+
+    if(feedNowRequest) {
+        feedNowRequest = false;
+        feed();
+    }
 }
 
 
 void feed() {
-    dprintln("FEEEEEDINGGGG!");
-    for(int j=0; j<2000; j++) {
-        for(int i=0; i<8; i++) {
-            digitalWrite(Pin1, pole1[i]); 
-            digitalWrite(Pin2, pole2[i]);
-            digitalWrite(Pin3, pole3[i]);
-            digitalWrite(Pin4, pole4[i]);
-            delay(2);
+    if(timeInited) {
+        dprintln("---- Feeding! ----");
+        for(int j=0; j<500; j++) {
+            for(int i=0; i<8; i++) {
+                digitalWrite(Pin1, pole1[i]);
+                delay(1);
+                digitalWrite(Pin2, pole2[i]);
+                delay(1);
+                digitalWrite(Pin3, pole3[i]);
+                delay(1);
+                digitalWrite(Pin4, pole4[i]);
+                delay(1);
+            }
         }
     }
 }
@@ -253,7 +263,7 @@ void updateTime() {
         sendNTPpacket(timeServerIP, packetBuffer, udp);  // send an NTP packet to a time server
         int retries = 0;
         while(!udp.parsePacket()) {
-            delay(200);
+            delay(400);
             retries++;
             if(retries == MAX_RETRIES) {
                 eprintln("Failed to update time...");
@@ -268,15 +278,29 @@ void updateTime() {
 
         initTimestamp = secs - getBootTime();
         dprintln("Time synced");
+
+        // Ignoring old feed requests of the day
+        if(!timeInited && config.version != 0) { // if config has been set before time
+            for(unsigned int i = 0; i<config.size; i++) {
+                config.fed[i] = getMinTimestamp() >= config.feed_on[i];
+            }
+        }
+
+        timeInited = true;
         rrate = 0;
     }
 }
 
 
 void debugInfo() {
-    dprint("\nCurrent time: ");
-    displayTime();
     dprintln();
+    if(WiFi.status() != WL_CONNECTED)
+        dprintln("Searching for connection...");
+    if(timeInited) {
+        dprint("Current time: ");
+        displayTime();
+        dprintln();
+    }
     if(config.size == 0) {
         dprintln("No config found.");
     } else {
@@ -359,9 +383,11 @@ unsigned long getBootTime() {
     return bootTime;
 }
 
-void soft_panic() {
-    eprintln("An error occurred. The device will restart.");
-    delay(5000);
+void soft_reset(bool error) {
+    if(error)
+        eprint("An error occurred. ");
+    eprintln("The device will restart.");
+    delay(3000);
     ESP.restart();
     while(1) {}
 }
