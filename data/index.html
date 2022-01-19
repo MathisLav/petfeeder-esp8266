@@ -1,18 +1,21 @@
 <html>
 	<head>
 		<title>Connection - Petfeeder</title>
-        <link href="/bootstrap.css" rel="stylesheet">    
+        <link href="/bootstrap.css" rel="stylesheet">
     </head>
 	<body class=container>
         <h1>Status</h1>
         <h2>%STATE%</h2>
         <br />
 		<h1>Connect your Device</h1>
+        <div id="networks" style="display:none;">%SSIDS%</div>
 		<form name="connection" action="connect" method="post" enctype="multipart/form-data">
             <div class="container">
                 <div class="form_group">
                     <label name="ssid">SSID:</label>
-                    <input type="text" name="ssid" required />
+                    <select id="ssid" name="ssid" required>
+                        <option value="">Select a network</option>
+                    </select>
                 </div>
                 <div class = "form_group">
                     <label name="password">Password:</label>
@@ -26,4 +29,15 @@
         <br />
         <div><a href="/delcreds">Delete all WiFi credentials</a></div>
 	</body>
+    <script type="text/javascript">
+        var networks = document.getElementById("networks").innerText;
+        var ssid_array = networks.split(",");
+        var options = document.getElementById("ssid");
+        ssid_array.forEach(element => {
+            let opt = document.createElement("option");
+            opt.value = element;
+            opt.innerText = element;
+            options.appendChild(opt);
+        });
+    </script>
 </html>
